@@ -51,6 +51,7 @@ import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.FetchMode;
 import org.hibernate.annotations.Filter;
 import org.hibernate.annotations.Immutable;
+import org.hibernate.annotations.DefaultJdbcResultCheck;
 import org.hibernate.annotations.Loader;
 import org.hibernate.annotations.NaturalIdCache;
 import org.hibernate.annotations.OptimisticLockType;
@@ -314,6 +315,12 @@ public class EntityBinder {
 		}
 
 		persistentClass.setBatchSize( batchSize );
+
+		final DefaultJdbcResultCheck jdbcUpdateResultCheck = annotatedClass.getAnnotation( DefaultJdbcResultCheck.class );
+		if ( jdbcUpdateResultCheck != null ) {
+			final String style = jdbcUpdateResultCheck.value().toString().toLowerCase();
+			persistentClass.setDefaultUpdateResultCheckStyle( ExecuteUpdateResultCheckStyle.fromExternalName( style ) );
+		}
 
 		//SQL overriding
 		SQLInsert sqlInsert = annotatedClass.getAnnotation( SQLInsert.class );

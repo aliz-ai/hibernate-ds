@@ -190,6 +190,22 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 									  ? ExecuteUpdateResultCheckStyle.determineDefault( customSQLDelete[0], deleteCallable[0] )
 									  : persistentClass.getCustomSQLDeleteCheckStyle();
 
+		final ExecuteUpdateResultCheckStyle defaultUpdateResultCheckStyle = persistentClass.getDefaultUpdateResultCheckStyle();
+		if ( defaultUpdateResultCheckStyle != null ) {
+			for ( int i = 0; i < joinSpan; ++i ) {
+
+				if ( persistentClass.getCustomSQLInsertCheckStyle() == null ) {
+					insertResultCheckStyles[i] = defaultUpdateResultCheckStyle;
+				}
+				if ( persistentClass.getCustomSQLUpdateCheckStyle() == null ) {
+					updateResultCheckStyles[i] = defaultUpdateResultCheckStyle;
+				}
+				if ( persistentClass.getCustomSQLDeleteCheckStyle() == null ) {
+					deleteResultCheckStyles[i] = defaultUpdateResultCheckStyle;
+				}
+			}
+		}
+
 		// JOINS
 
 		Iterator joinIter = persistentClass.getJoinClosureIterator();

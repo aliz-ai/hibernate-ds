@@ -95,6 +95,8 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 	private boolean customDeleteCallable;
 	private ExecuteUpdateResultCheckStyle deleteCheckStyle;
 
+	private ExecuteUpdateResultCheckStyle defaultUpdateResultCheckStyle;
+
 	private String temporaryIdTableName;
 	private String temporaryIdTableDDL;
 
@@ -634,6 +636,14 @@ public abstract class PersistentClass implements Serializable, Filterable, MetaA
 
 	public ExecuteUpdateResultCheckStyle getCustomSQLDeleteCheckStyle() {
 		return deleteCheckStyle;
+	}
+
+	public ExecuteUpdateResultCheckStyle getDefaultUpdateResultCheckStyle() {
+		return defaultUpdateResultCheckStyle;
+	}
+
+	public void setDefaultUpdateResultCheckStyle(ExecuteUpdateResultCheckStyle defaultUpdateResultCheckStyle) {
+		this.defaultUpdateResultCheckStyle = defaultUpdateResultCheckStyle;
 	}
 
 	public void addFilter(String name, String condition, boolean autoAliasInjection, java.util.Map<String,String> aliasTableMap, java.util.Map<String,String> aliasEntityMap) {
