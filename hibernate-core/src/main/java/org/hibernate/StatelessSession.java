@@ -68,6 +68,16 @@ public interface StatelessSession extends SharedSessionContract {
 	public Serializable insert(String entityName, Object entity);
 
 	/**
+	 * Insert multiple rows per JDBC insert statement. The operation is executed via multiple JDBC inserts if the size
+	 * of the <code>entities</code> array is larger than <code>maxRowsPerStatement</code>.
+	 * 
+	 * @param entityName The entityName for the entities to be inserted
+	 * @param maxRowsPerStatement the maximum number of rows one JDBC insert can contain
+	 * @param entities an array of all the new transient instances to be inserted
+	 */
+	public void insertMany(String entityName, int maxRowsPerStatement, Object[] entities);
+
+	/**
 	 * Update a row.
 	 *
 	 * @param entity a detached entity instance

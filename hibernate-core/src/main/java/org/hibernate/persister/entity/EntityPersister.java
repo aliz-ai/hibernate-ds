@@ -370,6 +370,12 @@ public interface EntityPersister extends OptimisticCacheSource, EntityDefinition
 	 */
 	public Serializable insert(Object[] fields, Object object, SessionImplementor session)
 	throws HibernateException;
+	
+	/**
+	 * Persist multiple instances using <code>INSERT</code> statements with multiple row values (optional operation)
+	 */
+	public void insertMany(int maxRowsPerStatement, Object[] entities, SessionImplementor session)
+	throws HibernateException;
 
 	/**
 	 * Delete a persistent instance

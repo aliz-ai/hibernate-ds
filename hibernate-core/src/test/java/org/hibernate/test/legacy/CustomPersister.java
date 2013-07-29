@@ -374,6 +374,11 @@ public class CustomPersister implements EntityPersister {
 		throw new UnsupportedOperationException();
 	}
 
+	public void insertMany(int maxRowsPerStatement, Object[] entities, SessionImplementor session) throws HibernateException {
+
+		throw new UnsupportedOperationException();
+	}
+
 	public void delete(
 		Serializable id,
 		Object version,

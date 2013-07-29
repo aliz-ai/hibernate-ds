@@ -30,7 +30,6 @@ import java.sql.SQLException;
 import java.sql.Types;
 
 import org.jboss.logging.Logger;
-
 import org.hibernate.HibernateException;
 import org.hibernate.StaleStateException;
 import org.hibernate.engine.jdbc.spi.SqlExceptionHelper;
@@ -187,6 +186,18 @@ public class Expectations {
 		}
 		else {
 			throw new HibernateException( "unknown check style : " + style );
+		}
+	}
+
+	public static Expectation createInsertManyExpectation(ExecuteUpdateResultCheckStyle style, int expectedRowCount) {
+		if ( style == ExecuteUpdateResultCheckStyle.NONE ) {
+			return Expectations.NONE;
+		}
+		else if ( style == ExecuteUpdateResultCheckStyle.COUNT ) {
+			return new BasicExpectation( expectedRowCount );
+		}
+		else {
+			throw new HibernateException( "Invalid check style : " + style );
 		}
 	}
 

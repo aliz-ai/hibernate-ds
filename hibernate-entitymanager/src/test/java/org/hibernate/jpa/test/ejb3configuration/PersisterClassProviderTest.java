@@ -24,12 +24,12 @@ import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Map;
+
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.PersistenceException;
 
 import org.junit.Assert;
 import org.junit.Test;
-
 import org.hibernate.EntityMode;
 import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
@@ -334,6 +334,10 @@ public class PersisterClassProviderTest {
 		@Override
 		public Serializable insert(Object[] fields, Object object, SessionImplementor session) {
 			return null;
+		}
+
+		@Override
+		public void insertMany(int maxRowsPerStatement, Object[] entities, SessionImplementor session) {
 		}
 
 		@Override

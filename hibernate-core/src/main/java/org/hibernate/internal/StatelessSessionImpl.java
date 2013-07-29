@@ -62,6 +62,8 @@ import org.hibernate.engine.transaction.internal.TransactionCoordinatorImpl;
 import org.hibernate.engine.transaction.spi.TransactionCoordinator;
 import org.hibernate.engine.transaction.spi.TransactionEnvironment;
 import org.hibernate.engine.transaction.spi.TransactionImplementor;
+import org.hibernate.id.Assigned;
+import org.hibernate.id.IdentifierGenerator;
 import org.hibernate.id.IdentifierGeneratorHelper;
 import org.hibernate.loader.criteria.CriteriaLoader;
 import org.hibernate.loader.custom.CustomLoader;
@@ -130,6 +132,19 @@ public class StatelessSessionImpl extends AbstractSessionImpl implements Statele
 		}
 		persister.setIdentifier( entity, id, this );
 		return id;
+	}
+
+	@Override
+	public void insertMany(String entityName, int maxRowsPerStatement, Object[] entities) {
+		if ( entityName == null ) {
+			throw new MappingException( "Undefined entity" );
+		}
+		errorIfClosed();
+		EntityPersister persister = factory.getEntityPersister( entityName );
+		if ( persister.isVersioned() ) {
+			throw new HibernateException( "unsupported" ); // TODO - temp
+		}
+		persister.insertMany( maxRowsPerStatement, entities, this );
 	}
 
 

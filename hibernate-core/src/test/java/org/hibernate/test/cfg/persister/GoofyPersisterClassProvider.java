@@ -299,6 +299,10 @@ public class GoofyPersisterClassProvider implements PersisterClassResolver {
 		}
 
 		@Override
+		public void insertMany(int maxRowsPerStatement, Object[] entities, SessionImplementor session) {
+		}
+
+		@Override
 		public void delete(Serializable id, Object version, Object object, SessionImplementor session) {
 		}
 

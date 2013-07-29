@@ -64,6 +64,7 @@ import org.hibernate.engine.OptimisticLockStyle;
 import org.hibernate.engine.internal.StatefulPersistenceContext;
 import org.hibernate.engine.internal.Versioning;
 import org.hibernate.engine.jdbc.batch.internal.BasicBatchKey;
+import org.hibernate.engine.jdbc.spi.JdbcCoordinator;
 import org.hibernate.engine.spi.CachedNaturalIdValueSource;
 import org.hibernate.engine.spi.CascadeStyle;
 import org.hibernate.engine.spi.CascadeStyles;
@@ -78,6 +79,8 @@ import org.hibernate.engine.spi.PersistenceContext.NaturalIdHelper;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.engine.spi.ValueInclusion;
+import org.hibernate.id.Assigned;
+import org.hibernate.id.IdentifierGenerationException;
 import org.hibernate.id.IdentifierGenerator;
 import org.hibernate.id.PostInsertIdentifierGenerator;
 import org.hibernate.id.PostInsertIdentityPersister;
@@ -88,6 +91,7 @@ import org.hibernate.internal.FilterConfiguration;
 import org.hibernate.internal.FilterHelper;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
+import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.jdbc.Expectation;
 import org.hibernate.jdbc.Expectations;
 import org.hibernate.jdbc.TooManyRowsAffectedException;
@@ -116,6 +120,7 @@ import org.hibernate.property.BackrefPropertyAccessor;
 import org.hibernate.sql.Alias;
 import org.hibernate.sql.Delete;
 import org.hibernate.sql.Insert;
+import org.hibernate.sql.InsertMany;
 import org.hibernate.sql.JoinFragment;
 import org.hibernate.sql.JoinType;
 import org.hibernate.sql.Select;
@@ -3512,6 +3517,292 @@ public abstract class AbstractEntityPersister
 				insert( id, fields, getPropertyInsertability(), j, getSQLInsertStrings()[j], object, session );
 			}
 		}
+	}
+
+	public void insertMany(int maxRowsPerStatement, Object[] entities, SessionImplementor session) 
+			throws HibernateException {
+
+		if ( maxRowsPerStatement < 1 ) {
+			throw new IllegalArgumentException(
+					"maxRowsPerStatement must be a positive integer: " + maxRowsPerStatement
+			);
+		}
+		final MultirowInsertHelper multirowInsertHelper = new MultirowInsertHelper( session, this );
+
+		int cntEntities = entities.length;
+		int cntReusedStmt = cntEntities / maxRowsPerStatement;
+		int lastCount = cntEntities % maxRowsPerStatement;
+		
+
+		if ( cntReusedStmt > 0 ) {
+			multirowInsertHelper.executeInsertMany( maxRowsPerStatement, cntReusedStmt, entities, 0 );
+		}
+
+		if ( lastCount > 0 ) {
+			multirowInsertHelper.executeInsertMany( lastCount, 1, entities, cntReusedStmt * maxRowsPerStatement );
+		}
+	}
+
+	protected static class MultirowInsertHelper {
+
+		protected final SessionFactoryImplementor factory;
+		protected final SessionImplementor session;
+		protected final AbstractEntityPersister persister;
+
+		protected final String entityName;
+		protected final int tableSpan;
+		protected final int propertySpan;
+		protected final Type[] propertyTypes;
+
+		protected final boolean[] includeProperty;
+		protected final boolean[][] includePropertyMatrix;
+		protected final boolean[][] includeColumns;
+		protected final int[] columnCounts;
+
+		protected MultirowInsertHelper(
+				SessionImplementor session,
+				AbstractEntityPersister persister) throws HibernateException {
+
+			super();
+			this.factory = session.getFactory();
+			this.session = session;
+			this.persister = persister;
+
+			entityName = persister.getEntityName();
+			tableSpan = persister.getTableSpan();
+			propertySpan = persister.getPropertySpan();
+			propertyTypes = persister.getPropertyTypes();
+
+			final IdentifierGenerator idGen = persister.getIdentifierGenerator();
+			if ( !Assigned.class.isInstance( idGen ) ) {
+				throw new HibernateException(
+						"Unsupported: ID generation for insertMany " + idGen.toString()
+				);
+			}
+
+			if ( !persister.lobProperties.isEmpty() ) {
+				final String[] propertyNames = persister.getPropertyNames();
+				final StringBuilder lobs = new StringBuilder();
+				for ( Integer iLob : persister.lobProperties ) {
+					lobs.append( ", " ).append( propertyNames[iLob] );
+				}
+				lobs.append(" ]");
+				lobs.setCharAt( 0, '[' );
+
+				throw new HibernateException(
+						"Unsupported: entity '" + entityName + "' contains LOB properties: " + lobs.toString()
+				);
+			}
+
+			includeProperty = persister.getPropertyInsertability();
+			includePropertyMatrix = new boolean[tableSpan][];
+			final int np = includeProperty.length;
+			for ( int j = 0; j < tableSpan; ++j ) {
+				
+				boolean[] a = new boolean[np];
+				for ( int i = 0; i < np; ++i ) {
+					a[i] = persister.isPropertyOfTable( i, j ) && includeProperty[i];
+				}
+				includePropertyMatrix[j] = a;
+				
+				if (persister.isInsertCallable( j )) {
+					throw new HibernateException( 
+							"Unsupported: insert statement is callable, entity=" + entityName
+					);
+				}
+			}
+
+			this.includeColumns = persister.getPropertyColumnInsertable();
+			final int ln = includeColumns.length;
+			columnCounts = new int[ln];
+
+			for ( int i = 0; i < ln; ++i ) {
+				columnCounts[i] = ArrayHelper.countTrue( includeColumns[i] );
+			}
+		}
+
+		public void executeInsertMany(int valuesCount, int nTimes, Object[] entities, int iEntity) 
+				throws HibernateException {
+
+			final EntityTuplizer tuplizer = persister.getEntityTuplizer();
+
+			PreparedStatement[] inserts = new PreparedStatement[tableSpan];
+			Serializable[] ids;
+			Object[][] states;
+
+			try {
+				for ( int j = 0; j < tableSpan; ++j ) {
+					inserts[j] = prepareInsertMany( valuesCount, j );
+				}
+
+				for ( int i = 0; i < nTimes; ++i ) {
+
+					Object entity;
+					Serializable id;
+					ids = new Serializable[valuesCount];
+					states = new Object[valuesCount][];
+
+					for ( int e = 0; e < valuesCount; ++e, ++iEntity ) {
+						entity = entities[iEntity];
+
+						id = tuplizer.getIdentifier( entity, session );
+						if ( id == null ) {
+							throw new IdentifierGenerationException( 
+									"ids for this class must be manually assigned before calling save(): " + entityName 
+							);
+						}
+						ids[e] = id;
+
+						states[e] = tuplizer.getPropertyValues( entity );
+					}
+					
+					performMany( valuesCount, ids, states, inserts );
+
+				}
+			}
+			catch ( SQLException e ) {
+				throw factory.getSQLExceptionHelper().convert(e,
+						"could not insert: " + MessageHelper.infoString( persister )
+				);
+			}
+			finally {
+				final JdbcCoordinator jdbcCoordinator = session.getTransactionCoordinator().getJdbcCoordinator();
+				for ( int j = 0; j < tableSpan; ++j ) {
+					if ( inserts[j] != null ) {
+						jdbcCoordinator.release( inserts[j] );
+						inserts[j] = null;
+					}
+				}
+			}
+		}
+
+		private PreparedStatement prepareInsertMany(int valuesCount, int j) throws HibernateException {
+
+			InsertMany insertMany = new InsertMany( factory.getDialect(), valuesCount );
+			insertMany.setTableName( persister.getTableName( j ) );
+
+			// add normal properties
+			final boolean[] includeProperty = includePropertyMatrix[j];
+			for ( int i = 0; i < propertySpan; i++ ) {
+				if ( includeProperty[i] ) {
+					insertMany.addColumns( 
+							persister.propertyColumnNames[i], 
+							includeColumns[i], 
+							persister.propertyColumnWriters[i] );
+				}
+			}
+
+			// add the discriminator
+			if ( j == 0 ) {
+				persister.addDiscriminatorToInsert( insertMany );
+			}
+
+			// add the primary key
+			insertMany.addColumns( persister.getKeyColumns( j ) );
+
+			if ( factory.getSettings().isCommentsEnabled() ) {
+				insertMany.setComment( "insert " + persister.getEntityName() );
+			}
+
+			final String sql = insertMany.toStatementString();
+
+			PreparedStatement stmt = session.getTransactionCoordinator()
+					.getJdbcCoordinator()
+					.getStatementPreparer()
+					.prepareStatement( sql, false );
+
+			return stmt;
+		}
+
+		private void performMany(
+				final int valuesCount,
+				final Serializable[] ids,
+		        final Object[][] states,
+		        final PreparedStatement[] inserts) throws SQLException, HibernateException {
+
+			final int[] index = new int[tableSpan];
+			final Expectation[] expectations = new Expectation[tableSpan];
+
+			for ( int j = 0; j < tableSpan; ++j ) {
+				expectations[j] = Expectations.createInsertManyExpectation( persister.insertResultCheckStyles[j], valuesCount );
+				index[j] = 1 + expectations[j].prepare( inserts[j] );
+			}
+
+			dehydrateMany( ids, states, inserts, index );
+
+			for ( int j = 0; j < tableSpan; ++j ) {
+
+				final int result = session.getTransactionCoordinator()
+						.getJdbcCoordinator()
+						.getResultSetReturn()
+						.executeUpdate( inserts[j] );
+				expectations[j].verifyOutcome( result, inserts[j], -1 );
+			}
+		}
+
+		private void dehydrateMany(
+				final Serializable[] ids,
+		        final Object[][] states,
+		        final PreparedStatement[] inserts,
+		        final int[] index) throws SQLException, HibernateException {
+			
+			final int[] propertyTableNumbers = persister.getPropertyTableNumbers();
+			final Type identifierType = persister.getIdentifierType();
+
+			int j;
+			Serializable id;
+			Object[] fields;
+
+			for ( int e = 0; e < 0; ++e ) {
+				id = ids[e];
+				fields = states[e];
+
+				for ( int i = 0; i < propertySpan; ++i ) {
+					if ( includeProperty[i] ) {
+						j = propertyTableNumbers[i];
+						propertyTypes[i].nullSafeSet( inserts[j], fields[i], index[j], includeColumns[i], session );
+						index[j] += columnCounts[i];
+					}
+				}
+			
+				for ( j = 0; j < tableSpan; ++j ) {
+					identifierType.nullSafeSet( inserts[j], id, index[j], session );
+					index[j] += persister.getIdentifierColumnSpan();
+				}
+			}
+		}
+
+		private int dehydrateMany(
+				final Serializable[] ids,
+		        final Object[][] states,
+		        final int j,
+		        final PreparedStatement ps,
+		        int index) throws SQLException, HibernateException {
+			
+			Serializable id;
+			Object[] fields;
+
+			for ( int e = 0; e < 0; ++e ) {
+				id = ids[e];
+				fields = states[e];
+
+				if ( LOG.isTraceEnabled() ) {
+					LOG.tracev( "Dehydrating entity: {0}", MessageHelper.infoString( persister, id, factory ) );
+				}
+
+				for ( int i = 0; i < propertySpan; i++ ) {
+					if ( includePropertyMatrix[i][j] ) {
+						propertyTypes[i].nullSafeSet( ps, fields[i], index, includeColumns[i], session );
+						index += columnCounts[i];
+					}
+				}
+			
+				index += persister.dehydrateId( id, null, ps, session, index );
+			}
+
+			return index;
+		}
+		
 	}
 
 	/**
