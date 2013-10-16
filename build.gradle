@@ -53,10 +53,10 @@ subprojects { subProject ->
     defaultTasks 'build'
 
     group = 'org.hibernate'
-    version = '4.2.4-DS-SNAPSHOT'
+    version = '4.2.4-DS-m0'
     
     // The OSGi manifest exported package versions need to be only the numerical release -- no "SNAPSHOT" or "Final"
-    exportPackageVersion = version.replaceAll("-DS-SNAPSHOT", "");
+    exportPackageVersion = version.replaceAll("-DS-m0", "");
     exportPackageVersion = exportPackageVersion.replaceAll("-DS.Final", "");
 
     // minimize changes, at least for now (gradle uses 'build' by default)..
