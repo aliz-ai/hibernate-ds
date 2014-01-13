@@ -3746,6 +3746,7 @@ public abstract class AbstractEntityPersister
 		        final PreparedStatement[] inserts,
 		        final int[] index) throws SQLException, HibernateException {
 			
+			final int count = ids.length;
 			final int[] propertyTableNumbers = persister.getPropertyTableNumbers();
 			final Type identifierType = persister.getIdentifierType();
 
@@ -3753,7 +3754,7 @@ public abstract class AbstractEntityPersister
 			Serializable id;
 			Object[] fields;
 
-			for ( int e = 0; e < 0; ++e ) {
+			for ( int e = 0; e < count; ++e ) {
 				id = ids[e];
 				fields = states[e];
 
